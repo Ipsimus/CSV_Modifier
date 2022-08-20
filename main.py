@@ -1,16 +1,135 @@
 import csv
 import datetime
+import random
+import math
+
+
+class School:
+
+    def __init__(self, year, month):
+
+        self.school_month = datetime.datetime(year, month, 1)
+        # ***** School Rules *****
+        # Hours are in 24hr time.
+        self.regular_open = 9      # 9am
+        self.regular_close = 20    # 8pm
+        self.weekend_open = 10     # 10am
+        self.weekend_close = 16    # 4pm
+        # The maximum hours a student can have in a day.
+        self.regular_hour_limit = 8
+        self.weekend_hour_limit = 6
+        self.variance = 0.05        # 5% variance allowed.
+
+        # Days of the month where class was held. Same as days attended.
+        self.days_open_arr = None
+
+        # Days open consists of regular days + weekend days.
+        self.days_open = set()
+
+        # Regular Days
+        self.regular_days = set()
+
+        # Weekend Days
+        self.weekend_days = set()
+
+        # Students in good standing:
+        self.allowed_students = dict()
+
+        # holds the student objects.
+        self.students_dict = dict()
+
+    # ********** Setters **********
+    def set_days_open_arr(self, arr):
+        self.days_open_arr = arr
+
+    # ********** Getters **********
+    def get_school_month(self):
+        return self.school_month
+
+    def get_regular_open(self):
+        return self.regular_open
+
+    def get_regular_close(self):
+        return self.regular_close
+
+    def get_weekend_open(self):
+        return self.weekend_open
+
+    def get_weekend_close(self):
+        return self.weekend_close
+
+    def get_regular_hour_limit(self):
+        return self.regular_hour_limit
+
+    def get_weekend_hour_limit(self):
+        return self.weekend_hour_limit
+
+    def get_days_open(self):
+        return self.days_open
+
+    def get_regular_days(self):
+        return self.regular_days
+
+    def get_weekend_days(self):
+        return self.weekend_days
+
+    def get_student_dict(self):
+        return self.students_dict
+
+    # ********** Obj Functions **********
+    def create_days_open_sets(self):
+
+        for day in range(0, len(self.days_open_arr)):
+
+            if self.days_open_arr[day] is True:
+
+                year, month = self.school_month.year, self.school_month.month
+                cur_date_obj = datetime.datetime(year, month, day)
+
+                # The 0 (Monday) - 6 (Sunday). Greater than Friday is Weekend.
+                if cur_date_obj.weekday() <= 4:
+                    self.regular_days.add(day)
+
+                else:
+                    self.weekend_days.add(day)
+
+        # Create days_open set, Union of regular days and weekend days:
+        self.days_open = self.regular_days.union(self.weekend_days)
+
+    def create_students_dict(self, student_data_dict):
+
+        for student_id in student_data_dict.keys():
+            # Get student id and school_obj into student class.
+            student_obj = Student(student_id, self)
+            last_name, first_name = student_data_dict[student_id][0][1:3]
+            student_obj.set_first_name(first_name)
+            student_obj.set_last_name(last_name)
+
+            # Set the original attendance data.
+            student_obj.set_original_attendance_data(
+                student_data_dict[student_id])
+
+            # Import original data into the modified_attendance_dict
+            student_obj.import_attendance()
+
+            # Update the total month hours.
+            student_obj.update_month_hours()
+
+            # Add student_obj to students dictionary.
+            self.students_dict[student_obj.student_id] = student_obj
 
 
 class Student:
 
-    def __init__(self, student_id):
+    def __init__(self, student_id, school_obj):
 
         self.student_id = student_id
         self.first_name = None
         self.last_name = None
+        self.school = school_obj
         self.session = None
         self.month_hours = None
+        self.needed_hours = None
         self.original_attendance_data = None
         self.modified_attendance_dict = dict()
 
@@ -20,6 +139,9 @@ class Student:
 
     def set_last_name(self, last_name):
         self.last_name = last_name
+
+    def set_needed_hours(self, hours):
+        self.needed_hours = hours
 
     def set_original_attendance_data(self, data):
         self.original_attendance_data = data
@@ -37,8 +159,17 @@ class Student:
     def get_original_attendance_data(self):
         return self.original_attendance_data
 
+    def get_modified_attendance_dict(self):
+        return self.modified_attendance_dict
+
     def get_session(self):
         return self.session
+
+    def get_month_hours(self):
+        return self.month_hours
+
+    def get_needed_hours(self):
+        return self.needed_hours
 
     # ********** Obj Functions **********
     def import_attendance(self):
@@ -62,6 +193,63 @@ class Student:
 
             # Adds Clock_Day object to the modified attendance dictionary.
             self.modified_attendance_dict[day.get_clock_day().day] = day
+
+    def update_month_hours(self):
+
+        self.month_hours = 0
+
+        for day_key in self.modified_attendance_dict.keys():
+
+            if self.modified_attendance_dict[day_key].get_total_hours() is None:
+                continue
+
+            self.month_hours += \
+                self.modified_attendance_dict[day_key].get_total_hours()
+
+    def needs_more_days(self):
+        """
+        Determines if a student needs more days.
+        :return: A tuple with BOOL and an integer representing hours still
+                needed.
+        """
+
+        my_school = self.school
+        cur_possible_hours = 0
+
+        for day in self.modified_attendance_dict.keys():
+            if day in my_school.regular_days:
+                cur_possible_hours += my_school.regular_hour_limit
+
+            else:
+                cur_possible_hours += my_school.weekend_hour_limit
+
+        estimated_possible_hours = cur_possible_hours * (
+                1 - my_school.variance)
+
+        if self.needed_hours <= estimated_possible_hours:
+            return False, 0
+
+        hours_left = (self.needed_hours - estimated_possible_hours)
+        return True, hours_left
+
+    def add_more_days(self, hours_needed):
+        # work here!!
+        # Use the set difference between the regular days and the days in
+
+
+    def adjust_hours(self):
+
+        # Check to see if the student has enough days.
+        needs_more_days, needed_hours = self.needs_more_days()
+
+        if needs_more_days is True:
+
+            # Here you will code adding more days to student.
+            self.add_more_days(needed_hours)
+
+        else:
+            # Here you will just do the adjustment.
+            pass
 
 
 class Clock_Day:
@@ -98,6 +286,27 @@ class Clock_Day:
     def get_total_hours(self):
         return self.total_hours
 
+    # ********** Obj Functions **********
+    def update_total_hours(self):
+
+        if self.clock_in is None or self.clock_out is None:
+            self.set_total_hours(None)
+
+        if self.clock_in > self.clock_out:
+            temp = self.clock_in
+
+            self.clock_in = self.clock_out
+            self.clock_out = temp
+
+        # The difference
+        diff = self.clock_out - self.clock_in
+
+        seconds = diff.total_seconds()
+
+        # Decimal hours is: seconds / 60sec in min and 60 min in hour.
+        decimal_hours = seconds / (60 * 60)
+        # Rounds to two decimal places.
+        self.set_total_hours(round(decimal_hours, 2))
 
 
 def get_header(file):
@@ -238,31 +447,11 @@ def min_max_clock_entries(date_row):
         return None, None
 
 
-def create_students_dict(student_dict):
-
-    students = dict()
-
-    for student_id in student_dict.keys():
-
-        # Get student id and last name into Student Class.
-        student_obj = Student(student_id)
-        last_name, first_name = student_dict[student_id][0][1:3]
-        student_obj.set_first_name(first_name)
-        student_obj.set_last_name(last_name)
-
-        # Set the original attendance data.
-        student_obj.set_original_attendance_data(student_dict[student_id])
-
-        # Import original data into the modified_attendance_dict
-        student_obj.import_attendance()
-
-        # Add student_obj to students dictionary.
-        students[student_obj.student_id] = student_obj
-
-    return students
-
-
 def main():
+
+    year = 2022
+    month = 7
+
     file = open('studentHoursTest.csv')
 
     csv_reader = csv.reader(file)
@@ -290,10 +479,26 @@ def main():
     # entries.
     students_data_dict = data_by_student_ids(month_rows)
 
-    # Creates student objects in dictionary form
-    students_dict = create_students_dict(students_data_dict)
+    # Creates School class.
+    school = School(year, month)
 
-    print(students_dict)
+    # add school attendance data
+    school.set_days_open_arr(days_attended)
+
+    # Create days open, regular days, and weekend days sets:
+    school.create_days_open_sets()
+
+    # Add student objects into School in dictionary form
+    school.create_students_dict(students_data_dict)
+
+    # ***** Test Case *****
+    student_dict = school.get_student_dict()
+
+    student = student_dict["00041"]
+
+    student.set_needed_hours(140)
+
+    print(student.needs_more_days())
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
