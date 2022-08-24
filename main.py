@@ -1,3 +1,4 @@
+import copy
 import csv
 import datetime
 import random
@@ -133,6 +134,11 @@ class Student:
         self.original_attendance_data = None
         self.modified_attendance_dict = dict()
 
+        self.avg_clock_in = None
+        self.avg_clock_out = None
+        self.cur_clock_obj = None
+        self.daily_hour_target = 0
+
     # ********** Setters **********
     def set_first_name(self, first_name):
         self.first_name = first_name
@@ -170,6 +176,12 @@ class Student:
 
     def get_needed_hours(self):
         return self.needed_hours
+
+    def get_modified_days_attended(self):
+        days_attended = set()
+        for day in self.modified_attendance_dict.keys():
+            days_attended.add(day)
+        return days_attended
 
     # ********** Obj Functions **********
     def import_attendance(self):
@@ -232,25 +244,188 @@ class Student:
         hours_left = (self.needed_hours - estimated_possible_hours)
         return True, hours_left
 
-    def add_more_days(self, hours_needed):
+    def add_adj_day(self):
         # work here!!
         # Use the set difference between the regular days and the days in
+        school = self.school
+        days_attended = self.get_modified_days_attended()
+        regular_day_choices = school.regular_days.difference(days_attended)
+        weekend_day_choices = school.weekend_days.difference(days_attended)
 
+        if regular_day_choices:
+            picked_day = random.choice(list(regular_day_choices))
+
+        elif weekend_day_choices:
+            picked_day = random.choice(list(weekend_day_choices))
+
+        else:
+            return False
+
+        # Gets the first day of the month being processed.
+        school_month_obj = school.get_school_month()
+        # Get the current year and month.
+        cur_year, cur_month = school_month_obj.year, school_month_obj.month
+        # Create Clock_Day object.
+        new_day = Clock_Day()
+        new_day.set_clock_day(datetime.datetime(cur_year, cur_month, picked_day))
+        # Add the new_day obj to the modified attendance.
+        self.modified_attendance_dict[picked_day] = new_day
+
+        return True
+
+    def entry_near_boundary(self, clock_obj):
+        clock_in, clock_out = clock_obj.get_clock_in(), clock_obj.get_clock_out()
+        day_obj = clock_obj.get_clock_day()
+
+        year, month, day = day_obj.year, day_obj.month, day_obj.day
+        open_hour = self.school.get_regular_open()
+        close_hour = self.school.get_regular_close()
+
+        clock_in_diff = None
+        clock_out_diff = None
+
+        if clock_obj.is_weekend():
+
+            open_hour = self.school.get_weekend_open()
+            close_hour = self.school.get_weekend_close()
+
+        if clock_in is not None:
+            open_time = datetime.datetime(year, month, day, open_hour)
+            clock_in_diff = clock_in - open_time
+
+        if clock_out is not None:
+            close_time = datetime.datetime(year, month, day, close_hour)
+            clock_out_diff = close_time - clock_out
+
+        if clock_in_diff is not None and clock_out_diff is not None:
+            if clock_in_diff.total_seconds() < clock_out_diff.total_seconds():
+                return clock_in  # represents clock in
+
+            else:
+                return clock_out  # represents clock out.
+
+        elif clock_in_diff is not None:
+            return clock_in
+
+        elif clock_out_diff is not None:
+            return clock_out
+        # If both are None, then neither is closer to the close/open.
+        return None
+
+    def avg_hours_needed_per_day(self):
+        """
+        Gets the estimated hours needed per day.
+        :return: float.
+        """
+        return self.needed_hours / len(self.modified_attendance_dict)
+
+
+    def avg_clock_entries(self):
+        """
+        Returns the average time for clock ins and clock outs.
+        :return: clock in and clock out datetime object.
+        """
+        arbitrary_date_in = copy.deepcopy(self.school.get_school_month())
+        arbitrary_date_out = copy.deepcopy(self.school.get_school_month())
+
+        clock_in_totals = 0
+        clock_in_len = 0
+        clock_out_totals = 0
+        clock_out_len = 0
+
+        for day in self.modified_attendance_dict.values():
+
+            if day.clock_in is not None:
+                clock_in_totals += (day.clock_in - arbitrary_date_in).seconds
+                clock_in_len += 1
+
+            if day.clock_out is not None:
+                clock_out_totals += (day.clock_out - arbitrary_date_out).seconds
+                clock_out_len += 1
+
+        avg_clock_in = arbitrary_date_in + datetime.timedelta(seconds=int((clock_in_totals / clock_in_len)))
+        avg_clock_out = arbitrary_date_out + datetime.timedelta(seconds=int((clock_out_totals / clock_out_len)))
+
+        return avg_clock_in, avg_clock_out
+
+    def remove_none_entry(self, clock_obj):
+
+        rand_min = random.randint(0, 59)
+        rand_sec = random.randint(0, 59)
+
+        if clock_obj.get_clock_in() is None:
+
+            temp_day_obj = copy.deepcopy(self.avg_clock_in)
+            temp_day_obj = temp_day_obj.replace(minute=rand_min,
+                                                second=rand_sec)
+            clock_obj.set_clock_in(temp_day_obj)
+
+        elif clock_obj.get_clock_out() is None:
+
+            temp_day_obj = copy.deepcopy(self.avg_clock_out)
+            temp_day_obj = temp_day_obj.replace(minute=rand_min,
+                                                second=rand_sec)
+            clock_obj.set_clock_out(temp_day_obj)
+
+        clock_obj.update_total_hours()
+
+    def adj_day_entry(self, clock_obj):
+
+        if self.daily_hour_target >= 8:
+            self.daily_hour_target = 8
+
+        while clock_obj.get_total_hours() is None or clock_obj.get_total_hours() < self.daily_hour_target * (
+                1 - self.school.variance):
+
+            # Removes none_clock entries and replaces them with random avg.
+            self.remove_none_entry(clock_obj)
+
+            nearest_boundary = self.entry_near_boundary(clock_obj)
+
+            # Work here, you need to modify entries which are not None.
+            # ***** ******
+            print(clock_obj)
+
+
+
+
+
+
+
+
+
+    def generate_clock_entries(self):
+
+        days_attended = self.get_modified_days_attended()
+        modified_attendance_dict = self.get_modified_attendance_dict()
+
+        for day_key in days_attended:
+            clock_day = modified_attendance_dict[day_key]
+
+            self.adj_day_entry(clock_day)
 
     def adjust_hours(self):
 
-        # Check to see if the student has enough days.
-        needs_more_days, needed_hours = self.needs_more_days()
+        # Adds the approximate need of days.
+        while True:
+            # Check to see if the student has enough days.
+            needs_more_days, needed_hours = self.needs_more_days()
 
-        if needs_more_days is True:
+            if needs_more_days is True:
+                # Here you will code adding more days to student.
+                # False means no more days can be added and will break loop.
+                if self.add_adj_day() is False:
+                    break
+            else:
+                break
 
-            # Here you will code adding more days to student.
-            self.add_more_days(needed_hours)
+        # Gets the estimated hours needed per day:
+        self.daily_hour_target = self.avg_hours_needed_per_day()
 
-        else:
-            # Here you will just do the adjustment.
-            pass
+        # Get avg hours entered per day
+        self.avg_clock_in, self.avg_clock_out = self.avg_clock_entries()
 
+        self.generate_clock_entries()
 
 class Clock_Day:
 
@@ -307,6 +482,11 @@ class Clock_Day:
         decimal_hours = seconds / (60 * 60)
         # Rounds to two decimal places.
         self.set_total_hours(round(decimal_hours, 2))
+
+    def is_weekend(self):
+        if self.clock_day.weekday() > 4:
+            return True
+        return False
 
 
 def get_header(file):
@@ -498,7 +678,11 @@ def main():
 
     student.set_needed_hours(140)
 
-    print(student.needs_more_days())
+    print(student.modified_attendance_dict.keys())
+
+    student.adjust_hours()
+
+    print("end")
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
