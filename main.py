@@ -77,6 +77,9 @@ class School:
     def get_student_dict(self):
         return self.students_dict
 
+    def get_variance(self):
+        return self.variance
+
     # ********** Obj Functions **********
     def create_days_open_sets(self):
 
@@ -369,29 +372,140 @@ class Student:
 
         clock_obj.update_total_hours()
 
+    def is_over_boundary(self, clock_obj):
+
+        # Variables
+        clock_in = clock_obj.get_clock_in()
+        clock_out = clock_obj.get_clock_out()
+        reg_open_hour = self.school.get_regular_close()
+        reg_close_hour = self.school.get_regular_close()
+        weekend_open_hour = self.school.get_weekend_open()
+        weekend_close_hour = self.school.get_weekend_close()
+        variance = self.school.get_variance()
+
+        # This are the Date time objects created for the opens and closes.
+        datetime_weekend_open = clock_in.replace(hour=weekend_open_hour,
+                                                 minute=0, second=0)
+        datetime_weekend_close = clock_in.replace(hour=weekend_close_hour,
+                                                 minute=0, second=0)
+        datetime_reg_open = clock_in.replace(hour=reg_open_hour,
+                                             minute=0, second=0)
+
+        datetime_reg_close = clock_in.replace(hour=reg_close_hour,
+                                              minute=0, second=0)
+
+        # This are the Decimal Hours for Open and Close
+        decimal_weekend_open = convert_to_decimal_hour(datetime_weekend_open)
+        decimal_weekend_close = convert_to_decimal_hour(datetime_weekend_close)
+        decimal_reg_open = convert_to_decimal_hour(datetime_reg_open)
+        decimal_reg_close = convert_to_decimal_hour(datetime_reg_close)
+
+        # Decimal Time for Clock in and out:
+        clock_in_decimal = convert_to_decimal_hour(clock_in)
+        clock_out_decimal = convert_to_decimal_hour(clock_out)
+
+        # weekend instructions.
+        if clock_obj.is_weekend():
+
+            if clock_in_decimal < (decimal_weekend_open * (1 - variance)):
+                return False
+
+            if clock_out_decimal > (decimal_weekend_close * (1 + variance)):
+                return False
+
+        # regular instructions.
+        else:
+
+            if clock_in_decimal < (decimal_reg_open * (1 - variance)):
+                return False
+
+            if clock_out_decimal > (decimal_reg_close * (1 + variance)):
+                return False
+
+        return True
+
     def adj_day_entry(self, clock_obj):
 
         if self.daily_hour_target >= 8:
             self.daily_hour_target = 8
 
-        while clock_obj.get_total_hours() is None or clock_obj.get_total_hours() < self.daily_hour_target * (
-                1 - self.school.variance):
+        # Removes none_clock entries and replaces them with random avg.
+        self.remove_none_entry(clock_obj)
 
-            # Removes none_clock entries and replaces them with random avg.
-            self.remove_none_entry(clock_obj)
+        nearest_boundary = self.entry_near_boundary(clock_obj)
 
-            nearest_boundary = self.entry_near_boundary(clock_obj)
+        # If clock in is closest begin with clock out.
+        if clock_obj.get_clock_in() == nearest_boundary:
+            pass
 
-            # Work here, you need to modify entries which are not None.
-            # ***** ******
-            print(clock_obj)
+        # If clock out is closest to boundary time, begin with clock in.
+        elif clock_obj.get_clock_out() == nearest_boundary:
 
+            variance = self.school.get_variance()
+            test_hour = clock_obj.get_clock_in().hour
+            test_clock_obj = copy.deepcopy(clock_obj)
+            weekend_limit = self.school.get_weekend_hour_limit()
+            regular_limit = self.school.get_regular_hour_limit()
+            final_clock_in = None
 
+            while test_clock_obj.get_total_hours() < self.daily_hour_target * (
+                    1 - self.school.variance):
 
+                # Replace method returns a new object.
+                test_clock_in = clock_obj.get_clock_in().replace(hour=test_hour)
 
+                test_clock_obj.set_clock_in(test_clock_in)
+                test_clock_obj.update_total_hours()
 
+                # if weekend is true
+                if is_datetime_weekend(test_clock_obj.get_clock_in()):
 
+                    # Are we past a boundary?
+                    if self.is_over_boundary(test_clock_obj):
+                        # If we are over our Go 1 hour forward
+                        test_clock_in = test_clock_obj.get_clock_in().replace(
+                            hour=(test_hour + 1))
+                        final_clock_in = test_clock_in
+                        break
 
+                    # Are we over our daily limit? Fix it: must be 8 or 6 hours.
+                    # Turn it into a function.
+                    if test_clock_obj.get_total_hours() > weekend_limit * (1 + variance):
+
+                        # If we are over our Go 1 hour forward
+                        test_clock_in = test_clock_obj.get_clock_in().replace(
+                            hour=(test_hour + 1))
+                        final_clock_in = test_clock_in
+                        break
+
+                # For Regular Days.
+                else:
+
+                    # Are we past a boundary?
+                    if self.is_over_boundary(test_clock_obj):
+                        # If we are over our Go 1 hour forward
+                        test_clock_in = test_clock_obj.get_clock_in().replace(
+                            hour=(test_hour + 1))
+                        final_clock_in = test_clock_in
+                        break
+
+                    # Are we over our daily limit?
+                    if test_clock_obj.get_total_hours() > regular_limit * (
+                            1 + variance):
+                        # If we are over our Go 1 hour forward
+                        test_clock_in = test_clock_obj.get_clock_in().replace(
+                            hour=(test_hour + 1))
+                        final_clock_in = test_clock_in
+                        break
+
+                test_hour -= 1
+
+            clock_obj.set_clock_in(final_clock_in)
+            clock_obj.update_total_hours()
+
+        # Work here, you need to modify entries which are not None.
+        # ***** ******
+        print(clock_obj)
 
 
     def generate_clock_entries(self):
@@ -404,6 +518,7 @@ class Student:
 
             self.adj_day_entry(clock_day)
 
+    # This function needs to be renamed!!!!!
     def adjust_hours(self):
 
         # Adds the approximate need of days.
@@ -487,6 +602,26 @@ class Clock_Day:
         if self.clock_day.weekday() > 4:
             return True
         return False
+
+
+# ********** Static Functions **********
+def is_datetime_weekend(datetime_obj):
+    if datetime_obj.weekday() > 4:
+        return True
+    return False
+
+
+def convert_to_decimal_hour(datetime_obj):
+
+    hour = datetime_obj.hour
+    min = datetime_obj.minute
+    sec = datetime_obj.second
+
+    total_sec = sec
+    total_sec += (min * 60)
+    total_sec += (hour * 60 * 60)
+
+    return round(total_sec / (60 * 60), 2)
 
 
 def get_header(file):
