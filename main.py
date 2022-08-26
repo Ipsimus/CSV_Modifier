@@ -312,6 +312,7 @@ class Student:
 
         elif clock_out_diff is not None:
             return clock_out
+
         # If both are None, then neither is closer to the close/open.
         return None
 
@@ -390,7 +391,6 @@ class Student:
                                                  minute=0, second=0)
         datetime_reg_open = clock_in.replace(hour=reg_open_hour,
                                              minute=0, second=0)
-
         datetime_reg_close = clock_in.replace(hour=reg_close_hour,
                                               minute=0, second=0)
 
@@ -406,23 +406,33 @@ class Student:
 
         # weekend instructions.
         if clock_obj.is_weekend():
-
             if clock_in_decimal < (decimal_weekend_open * (1 - variance)):
                 return False
-
             if clock_out_decimal > (decimal_weekend_close * (1 + variance)):
                 return False
 
         # regular instructions.
         else:
-
             if clock_in_decimal < (decimal_reg_open * (1 - variance)):
                 return False
-
             if clock_out_decimal > (decimal_reg_close * (1 + variance)):
                 return False
-
         return True
+
+    def is_over_daily_limit(self, clock_obj):
+
+        weekend_limit = self.school.get_weekend_hour_limit()
+        regular_limit = self.school.get_regular_hour_limit()
+        variance = self.school.get_variance()
+
+        if clock_obj.is_weekend():
+            if clock_obj.get_total_hours() > weekend_limit * (1 + variance):
+                return True
+        else:
+            if clock_obj.get_total_hours() > regular_limit * (1 + variance):
+                return True
+        return False
+
 
     def adj_day_entry(self, clock_obj):
 
@@ -433,6 +443,8 @@ class Student:
         self.remove_none_entry(clock_obj)
 
         nearest_boundary = self.entry_near_boundary(clock_obj)
+        if nearest_boundary is None:
+            print("The remove_none_entry is not working!!")
 
         # If clock in is closest begin with clock out.
         if clock_obj.get_clock_in() == nearest_boundary:
@@ -441,13 +453,12 @@ class Student:
         # If clock out is closest to boundary time, begin with clock in.
         elif clock_obj.get_clock_out() == nearest_boundary:
 
-            variance = self.school.get_variance()
             test_hour = clock_obj.get_clock_in().hour
             test_clock_obj = copy.deepcopy(clock_obj)
-            weekend_limit = self.school.get_weekend_hour_limit()
-            regular_limit = self.school.get_regular_hour_limit()
             final_clock_in = None
 
+            # You are Working Here!!
+            # Turn this into a While: then add the target goal break condition.
             while test_clock_obj.get_total_hours() < self.daily_hour_target * (
                     1 - self.school.variance):
 
@@ -457,46 +468,17 @@ class Student:
                 test_clock_obj.set_clock_in(test_clock_in)
                 test_clock_obj.update_total_hours()
 
-                # if weekend is true
-                if is_datetime_weekend(test_clock_obj.get_clock_in()):
+                # 1) Are we past a boundary?
+                # 2) Are we over our daily limit?
+                if self.is_over_boundary(test_clock_obj) or self.is_over_daily_limit(test_clock_obj):
+                    # If we are over; Go 1 hour forward
+                    # While loop is in case more hours need to be subtracted.
+                    while self.is_over_boundary(test_clock_obj) or self.is_over_daily_limit(test_clock_obj):
+                        test_clock_obj.inc_clock_in_hour()
+                        test_clock_in = test_clock_obj.get_clock_in()
 
-                    # Are we past a boundary?
-                    if self.is_over_boundary(test_clock_obj):
-                        # If we are over our Go 1 hour forward
-                        test_clock_in = test_clock_obj.get_clock_in().replace(
-                            hour=(test_hour + 1))
-                        final_clock_in = test_clock_in
-                        break
-
-                    # Are we over our daily limit? Fix it: must be 8 or 6 hours.
-                    # Turn it into a function.
-                    if test_clock_obj.get_total_hours() > weekend_limit * (1 + variance):
-
-                        # If we are over our Go 1 hour forward
-                        test_clock_in = test_clock_obj.get_clock_in().replace(
-                            hour=(test_hour + 1))
-                        final_clock_in = test_clock_in
-                        break
-
-                # For Regular Days.
-                else:
-
-                    # Are we past a boundary?
-                    if self.is_over_boundary(test_clock_obj):
-                        # If we are over our Go 1 hour forward
-                        test_clock_in = test_clock_obj.get_clock_in().replace(
-                            hour=(test_hour + 1))
-                        final_clock_in = test_clock_in
-                        break
-
-                    # Are we over our daily limit?
-                    if test_clock_obj.get_total_hours() > regular_limit * (
-                            1 + variance):
-                        # If we are over our Go 1 hour forward
-                        test_clock_in = test_clock_obj.get_clock_in().replace(
-                            hour=(test_hour + 1))
-                        final_clock_in = test_clock_in
-                        break
+                    final_clock_in = test_clock_in
+                    break
 
                 test_hour -= 1
 
@@ -602,6 +584,17 @@ class Clock_Day:
         if self.clock_day.weekday() > 4:
             return True
         return False
+
+    def inc_clock_in_hour(self):
+        """
+        Increments the current clock_in time by 1 hour.
+        :return: None.
+        """
+        new_hour = self.clock_in.hour + 1
+        new_clock_in = self.clock_in.replace(hour=new_hour)
+        self.clock_in = new_clock_in
+        # Always update total hours after any changes to clock in/out.
+        self.update_total_hours()
 
 
 # ********** Static Functions **********
