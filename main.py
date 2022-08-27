@@ -2,7 +2,7 @@ import copy
 import csv
 import datetime
 import random
-import math
+import time
 
 
 class School:
@@ -175,6 +175,7 @@ class Student:
         return self.session
 
     def get_month_hours(self):
+        self.update_month_hours()
         return self.month_hours
 
     def get_needed_hours(self):
@@ -248,7 +249,6 @@ class Student:
         return True, hours_left
 
     def add_adj_day(self):
-        # work here!!
         # Use the set difference between the regular days and the days in
         school = self.school
         days_attended = self.get_modified_days_attended()
@@ -323,7 +323,6 @@ class Student:
         """
         return self.needed_hours / len(self.modified_attendance_dict)
 
-
     def avg_clock_entries(self):
         """
         Returns the average time for clock ins and clock outs.
@@ -354,24 +353,27 @@ class Student:
 
     def remove_none_entry(self, clock_obj):
 
+        cur_day = clock_obj.get_clock_day_int()
         rand_min = random.randint(0, 59)
         rand_sec = random.randint(0, 59)
 
         if clock_obj.get_clock_in() is None:
+            rand_min = random.randint(0, 59)
+            rand_sec = random.randint(0, 59)
 
-            temp_day_obj = copy.deepcopy(self.avg_clock_in)
-            temp_day_obj = temp_day_obj.replace(minute=rand_min,
-                                                second=rand_sec)
+            temp_day_obj = self.avg_clock_in.replace(day=cur_day,
+                                                     minute=rand_min,
+                                                     second=rand_sec)
             clock_obj.set_clock_in(temp_day_obj)
 
-        elif clock_obj.get_clock_out() is None:
+        if clock_obj.get_clock_out() is None:
+            rand_min = random.randint(0, 59)
+            rand_sec = random.randint(0, 59)
 
-            temp_day_obj = copy.deepcopy(self.avg_clock_out)
-            temp_day_obj = temp_day_obj.replace(minute=rand_min,
-                                                second=rand_sec)
+            temp_day_obj = self.avg_clock_out.replace(day=cur_day,
+                                                      minute=rand_min,
+                                                      second=rand_sec)
             clock_obj.set_clock_out(temp_day_obj)
-
-        clock_obj.update_total_hours()
 
     def is_over_boundary(self, clock_obj):
 
@@ -433,6 +435,80 @@ class Student:
                 return True
         return False
 
+    def is_at_target(self, clock_obj):
+
+        regular_weekend_ratio = 1
+
+        if clock_obj.is_weekend():
+            regular_weekend_ratio = self.school.get_weekend_hour_limit() / \
+                                 self.school.get_regular_hour_limit()
+
+        return clock_obj.get_total_hours() >= (self.daily_hour_target * (
+                1 - self.school.variance) * regular_weekend_ratio)
+
+    def adj_clock_in(self, clock_obj):
+
+        test_hour = clock_obj.get_clock_in().hour
+        test_clock_obj = copy.deepcopy(clock_obj)
+        test_clock_in = test_clock_obj.get_clock_in()
+
+        # While not at the target we iterate.
+        while not self.is_at_target(test_clock_obj):
+
+            # Replace method returns a new object.
+            test_clock_in = clock_obj.get_clock_in().replace(hour=test_hour)
+
+            test_clock_obj.set_clock_in(test_clock_in)
+
+            # 1) Are we past a boundary?
+            # 2) Are we over our daily limit?
+            if self.is_over_boundary(
+                    test_clock_obj) or self.is_over_daily_limit(
+                    test_clock_obj):
+                # If we are over; Go 1 hour forward
+                # While loop is in case more hours need to be subtracted.
+                while self.is_over_boundary(
+                        test_clock_obj) or self.is_over_daily_limit(
+                        test_clock_obj):
+                    test_clock_obj.inc_clock_in_hour()
+                    test_clock_in = test_clock_obj.get_clock_in()
+                break
+
+            test_hour -= 1
+
+        clock_obj.set_clock_in(test_clock_in)
+
+    def adj_clock_out(self, clock_obj):
+        test_hour = clock_obj.get_clock_out().hour
+        test_clock_obj = copy.deepcopy(clock_obj)
+        test_clock_out = test_clock_obj.get_clock_out()
+
+        # While not at the target we iterate.
+        while not self.is_at_target(test_clock_obj):
+
+            # Replace method returns a new object.
+            test_clock_out = clock_obj.get_clock_out().replace(hour=test_hour)
+
+            test_clock_obj.set_clock_out(test_clock_out)
+
+            # 1) Are we past a boundary?
+            # 2) Are we over our daily limit?
+            if self.is_over_boundary(
+                    test_clock_obj) or self.is_over_daily_limit(test_clock_obj):
+                # If we are over; Go 1 hour forward
+                # While loop is in case more hours need to be subtracted.
+                while self.is_over_boundary(
+                        test_clock_obj) or self.is_over_daily_limit(test_clock_obj):
+
+                    # You are Working here.
+                    # Create a Decrement function for the Clock Day type.
+                    test_clock_obj.dec_clock_out_hour()
+                    test_clock_out = test_clock_obj.get_clock_out()
+                break
+
+            test_hour += 1
+
+        clock_obj.set_clock_out(test_clock_out)
 
     def adj_day_entry(self, clock_obj):
 
@@ -442,52 +518,27 @@ class Student:
         # Removes none_clock entries and replaces them with random avg.
         self.remove_none_entry(clock_obj)
 
+        # Correctly position earliest clock time as in and latest as out.
+        clock_obj.sort_clock_in_out()
+
         nearest_boundary = self.entry_near_boundary(clock_obj)
         if nearest_boundary is None:
             print("The remove_none_entry is not working!!")
 
         # If clock in is closest begin with clock out.
         if clock_obj.get_clock_in() == nearest_boundary:
-            pass
+            self.adj_clock_out(clock_obj)
+            self.adj_clock_in(clock_obj)
 
         # If clock out is closest to boundary time, begin with clock in.
         elif clock_obj.get_clock_out() == nearest_boundary:
-
-            test_hour = clock_obj.get_clock_in().hour
-            test_clock_obj = copy.deepcopy(clock_obj)
-            final_clock_in = None
-
-            # You are Working Here!!
-            # Turn this into a While: then add the target goal break condition.
-            while test_clock_obj.get_total_hours() < self.daily_hour_target * (
-                    1 - self.school.variance):
-
-                # Replace method returns a new object.
-                test_clock_in = clock_obj.get_clock_in().replace(hour=test_hour)
-
-                test_clock_obj.set_clock_in(test_clock_in)
-                test_clock_obj.update_total_hours()
-
-                # 1) Are we past a boundary?
-                # 2) Are we over our daily limit?
-                if self.is_over_boundary(test_clock_obj) or self.is_over_daily_limit(test_clock_obj):
-                    # If we are over; Go 1 hour forward
-                    # While loop is in case more hours need to be subtracted.
-                    while self.is_over_boundary(test_clock_obj) or self.is_over_daily_limit(test_clock_obj):
-                        test_clock_obj.inc_clock_in_hour()
-                        test_clock_in = test_clock_obj.get_clock_in()
-
-                    final_clock_in = test_clock_in
-                    break
-
-                test_hour -= 1
-
-            clock_obj.set_clock_in(final_clock_in)
-            clock_obj.update_total_hours()
+            self.adj_clock_in(clock_obj)
+            self.adj_clock_out(clock_obj)
 
         # Work here, you need to modify entries which are not None.
         # ***** ******
-        print(clock_obj)
+        print(f"The day: {clock_obj.get_clock_day().day} - "
+              f"The hours: {clock_obj.get_total_hours()}")
 
 
     def generate_clock_entries(self):
@@ -522,7 +573,17 @@ class Student:
         # Get avg hours entered per day
         self.avg_clock_in, self.avg_clock_out = self.avg_clock_entries()
 
+        # Generate the clock entries for all days.
         self.generate_clock_entries()
+
+        # Check that we have met the requirement.
+        if self.get_month_hours() < self.get_needed_hours():
+
+            if self.add_adj_day() is True:
+
+                # Generate the clock entries again.
+                self.generate_clock_entries()
+
 
 class Clock_Day:
 
@@ -538,9 +599,11 @@ class Clock_Day:
 
     def set_clock_in(self, clock_in):
         self.clock_in = clock_in
+        self.update_total_hours()
 
     def set_clock_out(self, clock_out):
         self.clock_out = clock_out
+        self.update_total_hours()
 
     def set_total_hours(self, hours):
         self.total_hours = hours
@@ -548,6 +611,9 @@ class Clock_Day:
     # ********** Getters **********
     def get_clock_day(self):
         return self.clock_day
+
+    def get_clock_day_int(self):
+        return self.clock_day.day
 
     def get_clock_in(self):
         return self.clock_in
@@ -563,6 +629,7 @@ class Clock_Day:
 
         if self.clock_in is None or self.clock_out is None:
             self.set_total_hours(None)
+            return
 
         if self.clock_in > self.clock_out:
             temp = self.clock_in
@@ -595,6 +662,28 @@ class Clock_Day:
         self.clock_in = new_clock_in
         # Always update total hours after any changes to clock in/out.
         self.update_total_hours()
+
+    def dec_clock_out_hour(self):
+        """
+        Decrements the current clock_out time by 1 hour.
+        :return: None.
+        """
+        new_hour = self.clock_in.hour - 1
+        new_clock_out = self.clock_in.replace(hour=new_hour)
+        self.clock_out = new_clock_out
+        # Always update total hours after any changes to clock in/out.
+        self.update_total_hours()
+
+    def sort_clock_in_out(self):
+
+        if self.clock_in is None or self.clock_out is None:
+            return
+
+        else:
+            if self.clock_in > self.clock_out:
+                temp = self.clock_in
+                self.clock_in = self.clock_out
+                self.clock_out = temp
 
 
 # ********** Static Functions **********
@@ -809,11 +898,15 @@ def main():
     print(student.modified_attendance_dict.keys())
 
     student.adjust_hours()
+    print(student.get_month_hours())
 
     print("end")
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
+
+    start_time = time.time()
     main()
+    print("--- %s seconds ---" % (time.time() - start_time))
 
 
