@@ -584,6 +584,9 @@ class Student:
                 # Generate the clock entries again.
                 self.generate_clock_entries()
 
+    def print_student_entries(self):
+        pass
+
 
 class Clock_Day:
 
