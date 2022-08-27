@@ -888,7 +888,7 @@ def main():
     # Add student objects into School in dictionary form
     school.create_students_dict(students_data_dict)
 
-    # ***** Test Case *****
+    # ********** Test Case **********
     student_dict = school.get_student_dict()
 
     student = student_dict["00041"]
