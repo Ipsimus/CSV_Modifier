@@ -4,6 +4,7 @@ import datetime
 import random
 import time
 
+random.seed()
 
 class School:
 
@@ -39,9 +40,15 @@ class School:
         # holds the student objects.
         self.students_dict = dict()
 
+        # Holders the fieldnames of the original csv file.
+        self.fieldnames = None
+
     # ********** Setters **********
     def set_days_open_arr(self, arr):
         self.days_open_arr = arr
+
+    def set_fieldnames(self, arr):
+        self.fieldnames = arr
 
     # ********** Getters **********
     def get_school_month(self):
@@ -80,6 +87,9 @@ class School:
     def get_variance(self):
         return self.variance
 
+    def get_fieldnames(self):
+        return self.fieldnames
+
     # ********** Obj Functions **********
     def create_days_open_sets(self):
 
@@ -108,6 +118,9 @@ class School:
             last_name, first_name = student_data_dict[student_id][0][1:3]
             student_obj.set_first_name(first_name)
             student_obj.set_last_name(last_name)
+
+            # Set the Session information: column 16 on original data.
+            student_obj.set_session(student_data_dict[student_id][0][16])
 
             # Set the original attendance data.
             student_obj.set_original_attendance_data(
@@ -354,26 +367,40 @@ class Student:
     def remove_none_entry(self, clock_obj):
 
         cur_day = clock_obj.get_clock_day_int()
-        rand_min = random.randint(0, 59)
-        rand_sec = random.randint(0, 59)
 
         if clock_obj.get_clock_in() is None:
-            rand_min = random.randint(0, 59)
-            rand_sec = random.randint(0, 59)
+            rand_min_in = random.randint(0, 59)
+            rand_sec_in = random.randint(0, 59)
 
-            temp_day_obj = self.avg_clock_in.replace(day=cur_day,
-                                                     minute=rand_min,
-                                                     second=rand_sec)
-            clock_obj.set_clock_in(temp_day_obj)
+            if clock_obj.is_weekend():
+
+                temp_datetime_in = self.avg_clock_in.replace(day=cur_day,
+                                                         hour=9,
+                                                         minute=rand_min_in,
+                                                         second=rand_sec_in)
+            # For Regular Days
+            else:
+                temp_datetime_in = self.avg_clock_in.replace(day=cur_day,
+                                                     minute=rand_min_in,
+                                                     second=rand_sec_in)
+            clock_obj.set_clock_in(temp_datetime_in)
 
         if clock_obj.get_clock_out() is None:
-            rand_min = random.randint(0, 59)
-            rand_sec = random.randint(0, 59)
+            rand_min_out = random.randint(0, 59)
+            rand_sec_out = random.randint(0, 59)
 
-            temp_day_obj = self.avg_clock_out.replace(day=cur_day,
-                                                      minute=rand_min,
-                                                      second=rand_sec)
-            clock_obj.set_clock_out(temp_day_obj)
+            if clock_obj.is_weekend():
+
+                temp_datetime_out = self.avg_clock_out.replace(day=cur_day,
+                                                          hour=15,
+                                                          minute=rand_min_out,
+                                                          second=rand_sec_out)
+            # For Regular Days
+            else:
+                temp_datetime_out = self.avg_clock_out.replace(day=cur_day,
+                                                          minute=rand_min_out,
+                                                          second=rand_sec_out)
+            clock_obj.set_clock_out(temp_datetime_out)
 
     def is_over_boundary(self, clock_obj):
 
@@ -408,8 +435,10 @@ class Student:
 
         # weekend instructions.
         if clock_obj.is_weekend():
+
             if clock_in_decimal < (decimal_weekend_open * (1 - variance)):
                 return False
+
             if clock_out_decimal > (decimal_weekend_close * (1 + variance)):
                 return False
 
@@ -462,14 +491,13 @@ class Student:
 
             # 1) Are we past a boundary?
             # 2) Are we over our daily limit?
-            if self.is_over_boundary(
-                    test_clock_obj) or self.is_over_daily_limit(
-                    test_clock_obj):
+            if self.is_over_boundary(test_clock_obj) \
+                    or self.is_over_daily_limit(test_clock_obj):
                 # If we are over; Go 1 hour forward
                 # While loop is in case more hours need to be subtracted.
-                while self.is_over_boundary(
-                        test_clock_obj) or self.is_over_daily_limit(
-                        test_clock_obj):
+                while self.is_over_boundary(test_clock_obj) \
+                        or self.is_over_daily_limit(test_clock_obj):
+
                     test_clock_obj.inc_clock_in_hour()
                     test_clock_in = test_clock_obj.get_clock_in()
                 break
@@ -493,12 +521,12 @@ class Student:
 
             # 1) Are we past a boundary?
             # 2) Are we over our daily limit?
-            if self.is_over_boundary(
-                    test_clock_obj) or self.is_over_daily_limit(test_clock_obj):
+            if self.is_over_boundary(test_clock_obj) \
+                    or self.is_over_daily_limit(test_clock_obj):
                 # If we are over; Go 1 hour forward
                 # While loop is in case more hours need to be subtracted.
-                while self.is_over_boundary(
-                        test_clock_obj) or self.is_over_daily_limit(test_clock_obj):
+                while self.is_over_boundary(test_clock_obj) \
+                        or self.is_over_daily_limit(test_clock_obj):
 
                     # You are Working here.
                     # Create a Decrement function for the Clock Day type.
@@ -585,7 +613,74 @@ class Student:
                 self.generate_clock_entries()
 
     def print_student_entries(self):
-        pass
+
+        with open(f'{self.student_id}_output.csv', mode='w',
+                  newline='') as student_file:
+
+            student_writer = csv.DictWriter(
+                student_file, fieldnames=self.school.get_fieldnames(),
+                delimiter=',', quotechar='"', quoting=csv.QUOTE_ALL)
+
+            student_writer.writeheader()
+
+            # Static values:
+            student_id = self.student_id        # index 0
+            last_name = self.last_name          # index 1
+            first_name = self.first_name        # index 2
+            department = self.session           # index 16
+
+            for day_key in self.modified_attendance_dict.keys():
+                clock_day = self.modified_attendance_dict[day_key]
+
+                clock_date = clock_day.get_clock_day().strftime(
+                    "%m/%d/%Y")                 # index 3
+                clock_in = clock_day.get_clock_in().strftime(
+                    "%m/%d/%Y %H:%M:%S %p")     # index 4
+                clock_out = clock_day.get_clock_out().strftime(
+                    "%m/%d/%Y %H:%M:%S %p")     # index 5
+                total_hours = clock_day.get_total_hours()  # index 10
+
+                student_writer.writerow(
+                    {'EMPID': student_id,
+                     'LAST': last_name,
+                     'FIRST': first_name,
+                     'CLKDATE': clock_date,
+                     'CLKIN': clock_in,
+                     'CLKOUT': clock_out,
+                     'CLKIN2': "",
+                     'CLKOUT2': "",
+                     'CLKIN3': "",
+                     'CLKOUT3': "",
+                     'HOURSTOT': total_hours,
+                     'HOURSTOT2': "",
+                     'HOURSTOT3': "",
+                     'NOTE': "",
+                     'CHGAUTHD': "",
+                     'SCHDDAY': "",
+                     'DEPT': department,
+                     'MISPNCH': "",
+                     'CLKIN4': "",
+                     'CLKOUT4': "",
+                     'CLKIN5': "",
+                     'CLKOUT5': "",
+                     'HOURSTOT4': "",
+                     'HOURSTOT5': "",
+                     'DLYOTHRS': "",
+                     'STRTBRK1': "",
+                     'ENDBRK1': "",
+                     'STRTBRK2': "",
+                     'ENDBRK2': "",
+                     'STRTBRK3': "",
+                     'ENDBRK3': "",
+                     'STRTBRK4': "",
+                     'ENDBRK4': "",
+                     'BRKTOT1': "",
+                     'BRKTOT2': "",
+                     'BRKTOT3': "",
+                     'BRKTOT4': "",
+                     'WKLYOT': ""
+                     }
+                )
 
 
 class Clock_Day:
@@ -687,6 +782,7 @@ class Clock_Day:
                 temp = self.clock_in
                 self.clock_in = self.clock_out
                 self.clock_out = temp
+
 
 
 # ********** Static Functions **********
@@ -857,7 +953,6 @@ def main():
     csv_reader = csv.reader(file)
 
     # Getting the Header of the CSV file.
-    header = []
     header = next(csv_reader)
 
     # Get the rows of data.
@@ -882,6 +977,9 @@ def main():
     # Creates School class.
     school = School(year, month)
 
+    # Set the fieldnames for exportation.
+    school.set_fieldnames(header)
+
     # add school attendance data
     school.set_days_open_arr(days_attended)
 
@@ -902,6 +1000,8 @@ def main():
 
     student.adjust_hours()
     print(student.get_month_hours())
+
+    student.print_student_entries()
 
     print("end")
 
