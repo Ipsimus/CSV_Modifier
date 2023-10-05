@@ -30,9 +30,10 @@ class School:
 
         # Regular Days
         self.regular_days = set()
-
         # Weekend Days
         self.weekend_days = set()
+        # Avoid Days
+        self.avoided_days = set()
 
         # Students in good standing:
         self.allowed_students = dict()
@@ -49,6 +50,10 @@ class School:
 
     def set_fieldnames(self, arr):
         self.fieldnames = arr
+
+    def set_avoided_days(self, *args):
+        for day_int in args:
+            self.avoided_days.add(day_int)
 
     # ********** Getters **********
     def get_school_month(self):
@@ -80,6 +85,9 @@ class School:
 
     def get_weekend_days(self):
         return self.weekend_days
+
+    def get_avoided_days(self):
+        return self.avoided_days
 
     def get_student_dict(self):
         return self.students_dict
@@ -264,9 +272,14 @@ class Student:
     def add_adj_day(self):
         # Use the set difference between the regular days and the days in
         school = self.school
+        # Get all days attended and days to be avoided.
         days_attended = self.get_modified_days_attended()
+        days_avoided = school.get_avoided_days()
+        # Get the difference between regular/Weekend days and days to avoid.
         regular_day_choices = school.regular_days.difference(days_attended)
+        regular_day_choices = regular_day_choices.difference(days_avoided)
         weekend_day_choices = school.weekend_days.difference(days_attended)
+        weekend_day_choices = weekend_day_choices.difference(days_avoided)
 
         if regular_day_choices:
             picked_day = random.choice(list(regular_day_choices))
@@ -360,7 +373,13 @@ class Student:
                 clock_out_len += 1
 
         avg_clock_in = arbitrary_date_in + datetime.timedelta(seconds=int((clock_in_totals / clock_in_len)))
-        avg_clock_out = arbitrary_date_out + datetime.timedelta(seconds=int((clock_out_totals / clock_out_len)))
+
+        # added 10/14/22 - to fix division by 0 issue, when no clock out is
+        # preformed.
+        if clock_out_len <= 1:
+            avg_clock_out = copy.deepcopy(avg_clock_in)
+        else:
+            avg_clock_out = arbitrary_date_out + datetime.timedelta(seconds=int((clock_out_totals / clock_out_len)))
 
         return avg_clock_in, avg_clock_out
 
@@ -568,15 +587,19 @@ class Student:
         print(f"The day: {clock_obj.get_clock_day().day} - "
               f"The hours: {clock_obj.get_total_hours()}")
 
-
     def generate_clock_entries(self):
 
         days_attended = self.get_modified_days_attended()
         modified_attendance_dict = self.get_modified_attendance_dict()
 
         for day_key in days_attended:
-            clock_day = modified_attendance_dict[day_key]
+            # Avoided days are deleted from dict and adj skipped.
+            if day_key in self.school.get_avoided_days():
+                del modified_attendance_dict[day_key]
+                continue
 
+            clock_day = modified_attendance_dict[day_key]
+            # Adjust the days entries.
             self.adj_day_entry(clock_day)
 
     # This function needs to be renamed!!!!!
@@ -635,9 +658,9 @@ class Student:
                 clock_date = clock_day.get_clock_day().strftime(
                     "%m/%d/%Y")                 # index 3
                 clock_in = clock_day.get_clock_in().strftime(
-                    "%m/%d/%Y %H:%M:%S %p")     # index 4
+                    "%m/%d/%Y %#I:%M:%S %p")     # index 4
                 clock_out = clock_day.get_clock_out().strftime(
-                    "%m/%d/%Y %H:%M:%S %p")     # index 5
+                    "%m/%d/%Y %#I:%M:%S %p")     # index 5
                 total_hours = clock_day.get_total_hours()  # index 10
 
                 student_writer.writerow(
@@ -945,10 +968,12 @@ def min_max_clock_entries(date_row):
 
 def main():
 
-    year = 2022
-    month = 7
+    # ********** Primary Date Info **********
+    year = 2023
+    month = 8
+    # ********** End of Date Info **********
 
-    file = open('studentHoursTest.csv')
+    file = open(f'{year}-{month:02d}.TXT')
 
     csv_reader = csv.reader(file)
 
@@ -964,11 +989,11 @@ def main():
     file.close()
 
     # Isolate only the month and year data.
-    month_rows = data_in_period(rows, 2022, 7)
+    month_rows = data_in_period(rows, year, month)
 
     # Get a list representing the days class was in session in a month.
     # the list can be indexed by the day of the month for results.
-    days_attended = get_all_days_attended_in_period(month_rows, 2022, 7)
+    days_attended = get_all_days_attended_in_period(month_rows, year, month)
 
     # Creates a dict() organized by student_id, containing the students clock
     # entries.
@@ -990,11 +1015,15 @@ def main():
     school.create_students_dict(students_data_dict)
 
     # ********** Test Case **********
+    school.set_avoided_days(
+        22, 23, 24, 25
+    )
+
     student_dict = school.get_student_dict()
 
-    student = student_dict["00041"]
+    student = student_dict["00084"]
 
-    student.set_needed_hours(140)
+    student.set_needed_hours(13)
 
     print(student.modified_attendance_dict.keys())
 
@@ -1004,6 +1033,7 @@ def main():
     student.print_student_entries()
 
     print("end")
+
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
